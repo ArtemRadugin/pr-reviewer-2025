@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+    db:
+      image: postgres:15
+      container_name: pr-db
+      restart: unless-stopped
+      environment:
+          POSTGRES_USER: ${POSTGRES_USER:-postgres}
+          POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qwerty}
+          POSTGRES_DB: ${POSTGRES_DB:-prdb}
+      ports:
+          - "5432:5432"
+      volumes:
+          - pgdata:/var/lib/postgresql/data
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-prdb}"]
+        interval: 5s
+        timeout: 5s
+        retries: 5
+
+    migrate:
+      image: migrate/migrate
+      entrypoint: [ "migrate" ]
+      command:
+        - "-path=/migrations"
+        - "-database=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-qwerty}@db:5432/${POSTGRES_DB:-prdb}?sslmode=disable"
+        - "up"
+      volumes:
+        - ./schema:/migrations
+      depends_on:
+        db:
+          condition: service_healthy
+      restart: "no"
+
+    app:
+      build: .
+      container_name: pr-service
+      restart: on-failure
+      depends_on:
+        - db
+        - migrate
+      ports:
+        - "8080:8080"
+      environment:
+        DB_HOST: db
+        DB_PORT: 5432
+        DB_USER: ${POSTGRES_USER:-postgres}
+        DB_PASS: ${POSTGRES_PASSWORD:-qwerty}
+        DB_NAME: ${POSTGRES_DB:-prdb}
+        PORT: 8080
+      env_file:
+         - .env
+# entrypoint handled inside image: /usr/local/bin/entrypoint.sh
+
+
+volumes:
+  pgdata:
